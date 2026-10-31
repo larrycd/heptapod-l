@@ -1,9 +1,4 @@
-<p align="center"><img src="docs/images/icon.png" width="96" alt="Heptapod L icon"></p>
-
-<h1 align="center">Heptapod L</h1>
-<p align="center"><b>A circular script by Larry Dalton</b><br>
-A complete, reversible writing system in which every sentence becomes one circular logogram,<br>
-and the Windows studio that writes it and reads it back.</p>
+<p align="center"><img src="docs/images/banner.svg" alt="Heptapod L - a circular script by Larry Dalton. Every sentence becomes one circular logogram." width="100%"></p>
 
 <p align="center">
 <a href="../../releases/latest"><b>Download for Windows</b></a> ·
