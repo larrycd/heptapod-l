@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en-AU"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Heptapod L Studio</title>
+<style>
+:root{--bg:#0b0d10;--panel:#12161b;--line:#22303a;--ink:#e9ece8;--dim:#8b98a2;--acc:#3fd0e0;--ok:#55d68a;--bad:#ff6b6b;--warn:#f0c050}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 "Segoe UI",system-ui,sans-serif}
+header{display:flex;align-items:baseline;gap:16px;padding:14px 20px;border-bottom:1px solid var(--line)}
+header h1{font-size:18px;margin:0;font-weight:600}header span{color:var(--dim);font-size:12px}
+main{display:grid;grid-template-columns:minmax(280px,1fr) minmax(360px,1.5fr) minmax(300px,1fr);gap:14px;padding:14px}
+@media(max-width:1100px){main{grid-template-columns:1fr}}
+section{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px;min-width:0}
+h2{font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--acc);margin:0 0 10px}
+textarea{width:100%;min-height:110px;background:#0a0d10;color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:10px;font:15px/1.4 Consolas,monospace;resize:vertical}
+button,select{background:#1b242c;color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:6px 10px;cursor:pointer;font:inherit}
+button:hover{border-color:var(--acc)}.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0}
+.kv{display:grid;grid-template-columns:120px 1fr;gap:3px 10px;font-size:13px}.kv b{color:var(--dim);font-weight:500}
+table{width:100%;border-collapse:collapse;font-size:12px}td,th{border-bottom:1px solid var(--line);padding:3px 5px;text-align:left}th{color:var(--dim);font-weight:500}
+.logo{background:#05070a;border-radius:6px;margin-bottom:10px}.logo svg{width:100%;height:auto;display:block}
+.pass{color:var(--ok)}.fail{color:var(--bad)}.warn{color:var(--warn)}.mono{font-family:Consolas,monospace}
+#drop{border:1px dashed var(--line);border-radius:6px;padding:18px;text-align:center;color:var(--dim)}#drop.over{border-color:var(--acc)}
+#preview img,#preview svg{max-width:100%;height:auto;display:block;margin:8px auto;border-radius:6px}
+.small{font-size:12px;color:var(--dim)}pre{white-space:pre-wrap;font-size:12px;color:var(--dim)}
+</style></head><body>
+<header><h1>Heptapod L <span style="font-weight:400;color:var(--dim)">Studio</span></h1><span style="color:var(--acc)">a circular script by Larry Dalton</span><span id="ver">connecting…</span></header>
+<main>
+<section><h2>Language input</h2>
+<textarea id="txt" spellcheck="false">What is your name?</textarea>
+<div class="row"><label class="small">Ink <select id="theme"><option value="dark">White on night</option><option value="paper">Black on paper</option></select></label>
+<button id="go">Encode</button></div>
+<div id="norm" class="small"></div>
+<h2 style="margin-top:14px">Interpretation</h2><div id="sem"></div>
+</section>
+<section><h2>Logogram output</h2><div id="out"><p class="small">Type to encode. Each sentence becomes one logogram.</p></div></section>
+<section><h2>Interpreter / decoder</h2>
+<div id="drop">Drop an SVG, PNG or JPEG here<br><input type="file" id="file" accept=".svg,image/svg+xml,image/png,image/jpeg"></div>
+<div id="preview"></div><div id="dec"></div>
+<h2 style="margin-top:14px">Engine self-test</h2>
+<p class="small" style="margin:0 0 6px">Checks the engine itself: draws test sentences and units, then reads them back from the drawing. Runs in the background — encoding and decoding keep working.</p>
+<div class="row"><button id="val">Self-test (quick)</button><button id="valf">Self-test (all 18,278 units)</button><button id="stop">Stop</button><button id="spec">Orthography spec</button></div>
+<div class="row"><button id="vali">Image self-test (browser renderer)</button></div>
+<div class="row"><input id="gid" placeholder="Glyph lookup: L, LA, LAR, ?, U+00E9" style="flex:1;background:#0a0d10;color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:6px"><button id="gl">Show</button></div>
+<div id="diag" class="small"></div>
+</section>
+</main>
+<script>
+const $=id=>document.getElementById(id);let timer=null,last=[];
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+async function api(p,b){const r=await fetch(p,b?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}:{});return r.json()}
+api('/api/health').then(h=>$('ver').textContent=h.language+' · orthography '+h.orthography+' · engine '+h.engine+' · port '+h.port).catch(()=>$('ver').textContent='server not reachable');
+function sched(){clearTimeout(timer);timer=setTimeout(encode,450)}
+$('txt').addEventListener('input',sched);$('theme').addEventListener('change',encode);$('go').onclick=encode;
+async function encode(){
+ const t=$('txt').value;if(!t.trim()){$('out').innerHTML='';$('sem').innerHTML='';return}
+ const r=await api('/api/encode',{text:t,theme:$('theme').value});last=r.sentences||[];
+ $('norm').textContent='Normalised: '+r.normalised.replace(/\n/g,'⏎');
+ let o='',s='';
+ last.forEach((x,i)=>{
+  o+=`<div class="logo">${x.svg}</div><div class="kv"><b>Sentence</b><span class="mono">${esc(x.text)}</span><b>Origin</b><span>${x.startAngle}° from first unit “${esc(x.firstUnit)}” (${x.firstUnitType})</span><b>Units</b><span class="mono">${esc(x.orthographic)}</span><b>Bands</b><span>${x.bands}</span><b>Round trip</b><span id="rt${i}">checking…</span><b>Image round trip</b><span id="ri${i}">checking…</span></div>
+  <div class="row"><button onclick="dl(${i},'svg')">Export SVG</button><button onclick="dl(${i},'png')">Export PNG</button></div>
+  <table><tr><th>#</th><th>Unit</th><th>Type</th><th>Canonical start</th><th>Placed</th><th>Glyph values</th></tr>${x.units.map((u,j)=>`<tr><td>${j+1}</td><td class="mono">${esc(u.text==='\n'?'⏎':u.text)}</td><td>${u.type}</td><td>${u.canonicalStart}°</td><td>${u.angle}°${u.band?' b'+u.band:''}</td><td class="mono">${u.glyphs.join(' ')}</td></tr>`).join('')}</table><hr style="border-color:var(--line)">`;
+  const m=x.semantic;s+=`<div class="kv"><b>Sentence</b><span class="mono">${esc(x.text)}</span><b>Mood</b><span>${m.mood}</span><b>Intent</b><span>${m.intent}</span>${Object.entries(m.roles||{}).map(([k,v])=>`<b>${k}</b><span>${esc(v)}</span>`).join('')}<b>Features</b><span>${(m.features||[]).join(', ')||'—'}</span><b>Orthographic</b><span class="mono">${esc(x.orthographic)}</span></div><br>`;
+ });
+ $('out').innerHTML=o;$('sem').innerHTML=s;
+ last.forEach(async(x,i)=>{const d=await decodeSvgText(x.svg);const ok=d.status==='ok'&&d.text===x.text;$('rt'+i).innerHTML=(ok?`<span class="pass">PASS</span> SVG geometry “${esc(d.text)}” · confidence ${d.confidence}`:`<span class="fail">FAIL</span> SVG ${esc(d.status)} “${esc(d.text)}” ${esc(d.reason)}`);
+  try{const im=await svgToImg(x.svg,1);const r=await decodeGray(toGray(im,2200));const ok2=r.text===x.text;$('ri'+i).innerHTML=ok2?`<span class="${r.status==='ok'?'pass':'warn'}">PASS</span> image pixels “${esc(r.text)}” · confidence ${r.confidence}`:`<span class="fail">FAIL</span> image ${esc(r.status)} “${esc(r.text)}” ${esc(r.reason||'')}`}catch(e){$('ri'+i).textContent='image check failed: '+e.message}});
+}
+function dl(i,kind){const x=last[i];const name='heptapod-L-'+x.text.replace(/[^A-Z0-9]+/g,'_').slice(0,40);
+ if(kind==='svg'){save(new Blob([x.svg],{type:'image/svg+xml'}),name+'.svg');return}
+ const img=new Image();img.onload=()=>{const c=document.createElement('canvas');c.width=img.width*2;c.height=img.height*2;const g=c.getContext('2d');g.drawImage(img,0,0,c.width,c.height);c.toBlob(b=>save(b,name+'.png'))};
+ img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(x.svg)}
+function save(b,n){const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=n;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000)}
+const drop=$('drop');['dragover','dragenter'].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.add('over')}));
+['dragleave','drop'].forEach(e=>drop.addEventListener(e,()=>drop.classList.remove('over')));
+drop.addEventListener('drop',ev=>{ev.preventDefault();if(ev.dataTransfer.files[0])load(ev.dataTransfer.files[0])});$('file').onchange=e=>e.target.files[0]&&load(e.target.files[0]);
+function load(f){const isSvg=/svg/i.test(f.type)||/\.svg$/i.test(f.name);const rd=new FileReader();
+ $('dec').innerHTML='<p class="small">Decoding…</p>';
+ rd.onload=async()=>{let d;
+  if(isSvg){$('preview').innerHTML=`<img src="data:image/svg+xml;charset=utf-8,${encodeURIComponent(rd.result)}">`;d=await decodeSvgText(rd.result)}
+  else{const img=await loadImg(rd.result);const g=toGray(img,2200);d=await decodeGray(g);drawOverlay(img,d)}
+  showDec(d)};
+ isSvg?rd.readAsText(f):rd.readAsDataURL(f)}
+function loadImg(src){return new Promise((ok,bad)=>{const i=new Image();i.onload=()=>ok(i);i.onerror=()=>bad(new Error('image could not be read'));i.src=src})}
+function toGray(img,max){let w=img.naturalWidth||img.width,h=img.naturalHeight||img.height;const k=Math.min(1,max/Math.max(w,h));w=Math.round(w*k);h=Math.round(h*k);
+ const c=document.createElement('canvas');c.width=w;c.height=h;const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,w,h);x.drawImage(img,0,0,w,h);
+ const p=x.getImageData(0,0,w,h).data;const g=new Uint8Array(w*h);for(let i=0;i<w*h;i++)g[i]=(p[4*i]*77+p[4*i+1]*150+p[4*i+2]*29)>>8;return{w,h,g,k}}
+async function decodeGray(o){const r=await fetch(`/api/decode/gray?w=${o.w}&h=${o.h}`,{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:o.g});const d=await r.json();d._k=o.k;return d}
+async function decodeSvgText(t){const r=await fetch('/api/decode/svg',{method:'POST',headers:{'Content-Type':'image/svg+xml'},body:t});return r.json()}
+function svgToImg(svg,scale){return new Promise((ok,bad)=>{const i=new Image();i.onload=()=>{if(scale===1)return ok(i);const c=document.createElement('canvas');c.width=Math.round(i.width*scale);c.height=Math.round(i.height*scale);c.getContext('2d').drawImage(i,0,0,c.width,c.height);const j=new Image();j.onload=()=>ok(j);j.src=c.toDataURL('image/png')};i.onerror=bad;i.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg)})}
+function drawOverlay(img,d){const r=d.checks&&d.checks.raster;const w=img.naturalWidth,h=img.naturalHeight;const c=document.createElement('canvas');c.width=w;c.height=h;c.style.width='100%';const x=c.getContext('2d');x.drawImage(img,0,0);
+ if(r&&r.bandRadii&&r.bandRadii.length){const k=1/(d._k||1),cx=r.centreX*k,cy=r.centreY*k;x.lineWidth=Math.max(1,w/500);x.strokeStyle='rgba(63,208,224,.8)';x.fillStyle='rgba(63,208,224,1)';x.font=`600 ${Math.max(14,w/28)}px Segoe UI,sans-serif`;
+  r.bandRadii.forEach(R=>{x.beginPath();x.arc(cx,cy,R*k,0,2*Math.PI);x.stroke()});
+  if(d.startAngle!=null){const R=r.bandRadii[r.bandRadii.length-1]*k,a=d.startAngle*Math.PI/180;x.beginPath();x.moveTo(cx,cy);x.lineTo(cx+R*1.15*Math.sin(a),cy-R*1.15*Math.cos(a));x.stroke();x.fillText('start',cx+R*1.2*Math.sin(a),cy-R*1.2*Math.cos(a))}
+  (d.units||[]).forEach(u=>{const R=r.bandRadii[u.band]*k,a=(d.startAngle+u.offset)*Math.PI/180,rr=R+(r.scale*k)*112;x.fillText(u.text==='\n'?'⏎':u.text,cx+rr*Math.sin(a)-8,cy-rr*Math.cos(a)+5)})}
+ $('preview').innerHTML='';$('preview').appendChild(c)}
+function showDec(d){const cls=d.status==='ok'?'pass':d.status==='partial'?'warn':'fail';
+ let h=`<div class="kv"><b>Status</b><span class="${cls}">${d.status}</span><b>Method</b><span>${d.method}</span>${d.reason?`<b>Reason</b><span>${esc(d.reason)}</span>`:''}`;
+ if(d.text!=null)h+=`<b>Recovered text</b><span class="mono">${esc(d.text)}</span><b>Origin</b><span>${d.startAngle}° (expected ${d.checks.startAngleExpected}°, ${d.checks.startAngleConsistent?'<span class=pass>consistent</span>':'<span class=fail>inconsistent</span>'})</span><b>Words / bands</b><span>${d.wordCount} / ${d.bands}</span><b>Confidence</b><span>${d.confidence}</span><b>Provenance</b><span>${d.checks.provenanceMatch===true?'metadata agrees':d.checks.provenanceMatch===false?'<span class=warn>metadata differs: '+esc(d.checks.provenanceText)+'</span>':'none'} (not used for decoding)</span>`;
+ h+='</div>';if(d.units&&d.units.length)h+=`<table><tr><th>Unit</th><th>Type</th><th>Word</th><th>Offset</th><th>Glyphs</th></tr>${d.units.map(u=>`<tr><td class="mono">${esc(u.text==='\n'?'⏎':u.text)}</td><td>${u.type}</td><td>${u.word+1}</td><td>${u.offset}°</td><td class="mono">${u.glyphs.join(' ')}</td></tr>`).join('')}</table>`;
+ if(d.unresolved&&d.unresolved.length)h+=`<pre>Unresolved: ${esc(JSON.stringify(d.unresolved,null,1))}</pre>`;$('dec').innerHTML=h}
+let poll=null;
+async function runVal(full){const r=await api('/api/selftest',{scope:full?'full':'quick'});if(r.status==='busy'){$('diag').innerHTML='<span class="warn">A self-test is already running.</span>'}watch()}
+function watch(){clearInterval(poll);poll=setInterval(showSt,1500);showSt()}
+async function showSt(){const s=await api('/api/selftest');
+ if(s.state==='running'){$('diag').innerHTML=`Running ${s.scope} self-test… ${s.phase} ${s.done} / ${s.total||'?'}`;return}
+ clearInterval(poll);if(s.state==='idle'){$('diag').textContent='';return}
+ if(s.state==='error'){$('diag').innerHTML='<span class="fail">Self-test error:</span> '+esc(s.error);return}
+ const v=s.result;$('diag').innerHTML=`<span class="${v.status==='ok'?'pass':v.status==='cancelled'?'warn':'fail'}">${v.status.toUpperCase()}</span> · ${v.scope} · ${v.seconds}s<br>Units: ${v.inventory.tested} drawn and read back, ${v.inventory.failed} failed${v.inventory.failures.length?'<pre>'+esc(JSON.stringify(v.inventory.failures,null,1))+'</pre>':''}<br>Images: ${(v.images||[]).filter(x=>x.pass).length}/${(v.images||[]).length} synthetic rasters decoded${(v.images||[]).filter(x=>!x.pass).map(x=>'<br><span class=fail>✗</span> '+esc(x.input)+' ×'+x.scale+' → '+esc(x.decoded)).join('')}<br>${v.sentences.map(t=>`<span class="${t.pass?'pass':'fail'}">${t.pass?'✓':'✗'}</span> <span class="mono">${esc(t.input)}</span>`).join('<br>')}`}
+$('gl').onclick=async()=>{const id=$('gid').value.trim();if(!id)return;const g=await api('/api/glyph/'+encodeURIComponent(id));if(g.status!=='ok'){$('diag').innerHTML='<span class="fail">'+esc(g.reason)+'</span>';return}
+ $('diag').innerHTML=`<div class="logo">${g.svg}</div><div class="kv"><b>Unit</b><span class="mono">${esc(g.text)} (${g.type})</span><b>Canonical start</b><span>${g.canonicalStart}°</span></div><table><tr><th>Value</th><th>Role</th><th>Dir</th><th>Curl</th><th>Barbs</th><th>Length</th></tr>${g.glyphs.map(x=>`<tr><td>${x.value}</td><td>${esc(x.role)}</td><td>${x.direction}</td><td>${x.curl}</td><td>${x.barbs}</td><td>${x.length}</td></tr>`).join('')}</table>`};
+$('vali').onclick=async()=>{const S=['LARRY','HUMANITY','LARRY KNOWS IAN','MY NAME IS LARRY','WHAT IS YOUR NAME?','HUMANITY SEEKS PEACE.',"Larry's e-mail: larry@jjswaste.com.au (test #42) - done!"];
+ const cfgs=[['dark',1,'png'],['paper',2,'png'],['dark',0.7,'jpeg'],['paper',1,'jpeg']];let out=[],pass=0,tot=0;
+ for(const t of S)for(const [th,sc,fmt] of cfgs){$('diag').textContent=`Image self-test ${tot+1}/${S.length*cfgs.length}…`;
+  const e=await api('/api/encode',{text:t,theme:th});const x=e.sentences[0];let im=await svgToImg(x.svg,sc);
+  if(fmt==='jpeg'){const c=document.createElement('canvas');c.width=im.width;c.height=im.height;c.getContext('2d').drawImage(im,0,0);im=await loadImg(c.toDataURL('image/jpeg',0.75))}
+  const r=await decodeGray(toGray(im,2200));const ok=r.text===x.text;tot++;if(ok)pass++;out.push(`<span class="${ok?'pass':'fail'}">${ok?'✓':'✗'}</span> ${th} ×${sc} ${fmt} <span class="mono">${esc(x.text)}</span>${ok?'':' → '+esc(r.text||r.reason)}`)}
+ $('diag').innerHTML=`<span class="${pass===tot?'pass':'fail'}">${pass}/${tot} images decoded exactly</span><br>`+out.join('<br>')};
+$('val').onclick=()=>runVal(false);$('valf').onclick=()=>runVal(true);$('stop').onclick=()=>api('/api/selftest/cancel',{});
+api('/api/selftest').then(s=>{if(s.state!=='idle')watch()});
+$('spec').onclick=async()=>{const t=await (await fetch('/api/spec')).text();$('diag').innerHTML='<pre>'+esc(t)+'</pre>'};
+encode();
+</script></body></html>
