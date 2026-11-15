@@ -1,5 +1,6 @@
-# Heptapod L Studio - uninstall helper (run by the Windows uninstaller)
+﻿# Heptapod L Studio - uninstall helper (run by the Windows uninstaller)
 $ErrorActionPreference = 'SilentlyContinue'
+try { Unregister-ScheduledTask -TaskName 'Heptapod L Studio - keep running' -Confirm:$false -ErrorAction Stop } catch { schtasks.exe /Delete /TN 'Heptapod L Studio - keep running' /F 2>$null | Out-Null }
 Get-CimInstance Win32_Process -Filter "Name='powershell.exe' OR Name='pwsh.exe'" |
     Where-Object { $_.CommandLine -match '\\HeptapodStudio\\server\.ps1' -and $_.ProcessId -ne $PID } |
     ForEach-Object { Stop-Process -Id $_.ProcessId -Force }

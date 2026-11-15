@@ -6,7 +6,7 @@ SetCompressor /SOLID lzma
 !include "LogicLib.nsh"
 
 !define APPNAME "Heptapod L Studio"
-!define VERSION "1.1.1"
+!define VERSION "1.1.2"
 !define PUBLISHER "Larry Dalton"
 !define UNINSTKEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\HeptapodL"
 
@@ -15,7 +15,7 @@ OutFile "HeptapodL-Setup.exe"
 RequestExecutionLevel user
 InstallDir "$LOCALAPPDATA\HeptapodL-Setup"
 BrandingText "Heptapod L - a circular script by Larry Dalton"
-VIProductVersion "1.1.1.0"
+VIProductVersion "1.1.2.0"
 VIAddVersionKey "ProductName" "${APPNAME}"
 VIAddVersionKey "CompanyName" "${PUBLISHER}"
 VIAddVersionKey "FileDescription" "Heptapod L Studio setup"
@@ -97,12 +97,10 @@ Section "Install"
   DetailPrint "Install verified: engine, image decoder and self-test passed."
 
   ; shortcuts
-  WriteINIStr "$SMPROGRAMS\Heptapod L Studio.url" "InternetShortcut" "URL" "http://localhost:8765/"
-  WriteINIStr "$SMPROGRAMS\Heptapod L Studio.url" "InternetShortcut" "IconFile" "$INSTDIR\heptapodl.ico"
-  WriteINIStr "$SMPROGRAMS\Heptapod L Studio.url" "InternetShortcut" "IconIndex" "0"
-  WriteINIStr "$DESKTOP\Heptapod L Studio.url" "InternetShortcut" "URL" "http://localhost:8765/"
-  WriteINIStr "$DESKTOP\Heptapod L Studio.url" "InternetShortcut" "IconFile" "$INSTDIR\heptapodl.ico"
-  WriteINIStr "$DESKTOP\Heptapod L Studio.url" "InternetShortcut" "IconIndex" "0"
+  Delete "$SMPROGRAMS\Heptapod L Studio.url"
+  CreateShortcut "$SMPROGRAMS\Heptapod L Studio.lnk" "$WINDIR\System32\wscript.exe" '//B //Nologo "$LOCALAPPDATA\HeptapodStudio\open-studio.vbs"' "$INSTDIR\heptapodl.ico" 0 SW_SHOWNORMAL "" "Heptapod L Studio - starts the studio if needed and opens it"
+  Delete "$DESKTOP\Heptapod L Studio.url"
+  CreateShortcut "$DESKTOP\Heptapod L Studio.lnk" "$WINDIR\System32\wscript.exe" '//B //Nologo "$LOCALAPPDATA\HeptapodStudio\open-studio.vbs"' "$INSTDIR\heptapodl.ico" 0 SW_SHOWNORMAL "" "Heptapod L Studio - starts the studio if needed and opens it"
 
   ; uninstaller (Settings > Apps)
   WriteUninstaller "$INSTDIR\Uninstall.exe"
@@ -125,6 +123,8 @@ Section "Uninstall"
   ExecWait '"$WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "$INSTDIR\Uninstall.ps1"'
   Delete "$SMPROGRAMS\Heptapod L Studio.url"
   Delete "$DESKTOP\Heptapod L Studio.url"
+  Delete "$SMPROGRAMS\Heptapod L Studio.lnk"
+  Delete "$DESKTOP\Heptapod L Studio.lnk"
   DeleteRegKey HKCU "${UNINSTKEY}"
   Delete "$INSTDIR\Install.ps1"
   Delete "$INSTDIR\Uninstall.ps1"

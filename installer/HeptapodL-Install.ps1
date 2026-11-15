@@ -1,5 +1,5 @@
 ﻿# =====================================================================
-#  HEPTAPOD L STUDIO - INSTALLER 1.1.1 (orthography HL-1.1) - Heptapod L by Larry Dalton
+#  HEPTAPOD L STUDIO - INSTALLER 1.1.2 (orthography HL-1.1) - Heptapod L by Larry Dalton
 #  Paste the whole script into Windows PowerShell 5.1 (or save as .ps1
 #  and run). Everything runs inside one script block, so nothing executes
 #  until the full paste has been received.
@@ -65,10 +65,91 @@ function Stop-OldStudio {
     for ($i = 0; $i -lt 20; $i++) { Start-Sleep -Milliseconds 500; if ($null -eq (Get-PortOwner)) { return $true } }
     Say "Port $Port did not become free." 'Red'; return $false
 }
-function Start-Studio([string]$dir) {
+$App = $AppDir
+function Start-StudioDirect([string]$dir = $AppDir) {
     $argStr = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + (Join-Path $dir 'server.ps1') + '" -Port ' + $Port + ' -Root "' + $dir + '"'
     Start-Process -FilePath $PsExe -ArgumentList $argStr -WindowStyle Hidden | Out-Null
 }
+# ---- Keep-alive (scheduled task) - by Larry Dalton ----
+$KeepName = 'Heptapod L Studio'
+$script:KeepTask = $null
+function Start-Studio([string]$dir = $AppDir) {
+    if ($script:KeepTask -and (Test-Path -LiteralPath (Join-Path $App 'start-server.vbs'))) { try { Start-ScheduledTask -TaskName $script:KeepTask -ErrorAction Stop; return } catch { } }
+    Start-StudioDirect $dir
+}
+function Write-KeepVbs {
+    $common = @"
+Function IsUp()
+  On Error Resume Next
+  Dim x
+  Set x = CreateObject("MSXML2.ServerXMLHTTP.6.0")
+  x.setTimeouts 2000, 2000, 2000, 3000
+  x.open "GET", "http://localhost:$Port/api/health", False
+  x.send
+  IsUp = (Err.Number = 0 And x.status = 200)
+  On Error Goto 0
+End Function
+Sub StartServer()
+  Dim sh, fso, dir
+  Set sh = CreateObject("WScript.Shell")
+  Set fso = CreateObject("Scripting.FileSystemObject")
+  dir = fso.GetParentFolderName(WScript.ScriptFullName)
+  sh.Run """" & sh.ExpandEnvironmentStrings("%SystemRoot%") & "\System32\WindowsPowerShell\v1.0\powershell.exe"" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File """ & dir & "\server.ps1""", 0, False
+End Sub
+"@
+    $start = "' $KeepName`: starts the server hidden if it is not already answering on port $Port.`r`n' Run by the scheduled task '$KeepName - keep running'. By Larry Dalton.`r`nOption Explicit`r`n" + $common + "`r`nIf Not IsUp() Then StartServer`r`n"
+    $open = "' $KeepName`: starts the server if needed, waits for it, then opens http://localhost:$Port/`r`n' By Larry Dalton.`r`nOption Explicit`r`n" + $common + @"
+
+Dim i, ok
+ok = IsUp()
+If Not ok Then
+  StartServer
+  For i = 1 To 60
+    WScript.Sleep 500
+    If IsUp() Then ok = True: Exit For
+  Next
+End If
+If ok Then
+  CreateObject("WScript.Shell").Run "http://localhost:$Port/"
+Else
+  MsgBox "$KeepName did not start within 30 seconds." & vbCrLf & vbCrLf & "Please run its installer again.", vbExclamation, "$KeepName"
+End If
+"@
+    [System.IO.File]::WriteAllText((Join-Path $App 'start-server.vbs'), $start.Replace("`r`n", "`n").Replace("`n", "`r`n"), [System.Text.Encoding]::ASCII)
+    [System.IO.File]::WriteAllText((Join-Path $App 'open-studio.vbs'), $open.Replace("`r`n", "`n").Replace("`n", "`r`n"), [System.Text.Encoding]::ASCII)
+}
+function Register-KeepTask {
+    $task = "$KeepName - keep running"
+    $me = [System.Security.SecurityElement]::Escape([System.Security.Principal.WindowsIdentity]::GetCurrent().Name)
+    $wscript = [System.Security.SecurityElement]::Escape((Join-Path $env:WINDIR 'System32\wscript.exe'))
+    $arg = [System.Security.SecurityElement]::Escape('//B //Nologo "' + (Join-Path $App 'start-server.vbs') + '"')
+    $desc = [System.Security.SecurityElement]::Escape("Keeps $KeepName running at http://localhost:$Port/ - starts it at sign-in, on unlock and every 5 minutes if it has stopped.")
+    $xml = @"
+<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo><Author>Larry Dalton</Author><Description>$desc</Description></RegistrationInfo>
+  <Triggers>
+    <LogonTrigger><Enabled>true</Enabled><UserId>$me</UserId></LogonTrigger>
+    <SessionStateChangeTrigger><Enabled>true</Enabled><StateChange>SessionUnlock</StateChange><UserId>$me</UserId></SessionStateChangeTrigger>
+    <TimeTrigger><Repetition><Interval>PT5M</Interval><StopAtDurationEnd>false</StopAtDurationEnd></Repetition><StartBoundary>2026-01-01T00:00:00</StartBoundary><Enabled>true</Enabled></TimeTrigger>
+  </Triggers>
+  <Principals><Principal id="Author"><UserId>$me</UserId><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>
+  <Settings><MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy><DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries><StopIfGoingOnBatteries>false</StopIfGoingOnBatteries><AllowHardTerminate>true</AllowHardTerminate><StartWhenAvailable>true</StartWhenAvailable><RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable><IdleSettings><StopOnIdleEnd>false</StopOnIdleEnd><RestartOnIdle>false</RestartOnIdle></IdleSettings><AllowStartOnDemand>true</AllowStartOnDemand><Enabled>true</Enabled><Hidden>false</Hidden><RunOnlyIfIdle>false</RunOnlyIfIdle><WakeToRun>false</WakeToRun><ExecutionTimeLimit>PT5M</ExecutionTimeLimit><Priority>7</Priority></Settings>
+  <Actions Context="Author"><Exec><Command>$wscript</Command><Arguments>$arg</Arguments></Exec></Actions>
+</Task>
+"@
+    try { Register-ScheduledTask -TaskName $task -Xml $xml -Force -ErrorAction Stop | Out-Null }
+    catch {
+        $tmp = Join-Path $env:TEMP ('studio-task-' + $Port + '.xml')
+        [System.IO.File]::WriteAllText($tmp, $xml, [System.Text.Encoding]::Unicode)
+        $out = & schtasks.exe /Create /TN $task /XML $tmp /F 2>&1
+        Remove-Item $tmp -Force -ErrorAction SilentlyContinue
+        if ($LASTEXITCODE -ne 0) { throw ('could not create the scheduled task: ' + ($out -join ' ')) }
+    }
+    [void](Get-ScheduledTask -TaskName $task -ErrorAction Stop)
+    return $task
+}
+# ---- end keep-alive ----
 function New-Shortcut([string]$dir) {
     $sh = New-Object -ComObject WScript.Shell
     $s = $sh.CreateShortcut($Lnk)
@@ -1889,7 +1970,9 @@ try {
     [void][System.Management.Automation.Language.Parser]::ParseFile((Join-Path $AppDir 'server.ps1'), [ref]$tok, [ref]$perr)
     if ($perr.Count -gt 0) { throw ('server.ps1 syntax error: ' + $perr[0].Message + ' line ' + $perr[0].Extent.StartLineNumber) }
     Say 'Files written; server.ps1 parses cleanly.'
-    New-Shortcut $AppDir; Say ('Startup shortcut: ' + $Lnk)
+    try { Write-KeepVbs; $script:KeepTask = Register-KeepTask; Say ('Scheduled task "' + $script:KeepTask + '" registered (sign-in, unlock, every 5 minutes)') }
+    catch { $script:KeepTask = $null; Say ('Scheduled task not available (' + $_.Exception.Message + '); using a Startup shortcut instead') 'Yellow' }
+    if ($script:KeepTask) { if (Test-Path $Lnk) { Remove-Item $Lnk -Force } } else { New-Shortcut $AppDir; Say ('Startup shortcut: ' + $Lnk) }
     # 4. start + verify
     Start-Studio $AppDir
     $h = $null
@@ -1918,6 +2001,7 @@ try {
 
 if ($null -eq $failure) {
     Say ''
+    if ($script:KeepTask) { Say 'Keeps itself running: the scheduled task started the server, and starts it at sign-in, on unlock and every 5 minutes if it stops.' 'Green' }
     Say "INSTALLED. Open http://localhost:$Port/" 'Cyan'
     Write-Result 'OK'
     if ($hadOld) { Say ('Previous version kept at ' + $BackupDir) }
@@ -1938,9 +2022,10 @@ try {
         Remove-Item -Path $AppDir -Recurse -Force
         Copy-Item -Path $BackupDir -Destination $AppDir -Recurse -Force
         Say 'Previous files restored.'
+        try { if ($script:KeepTask) { Write-KeepVbs } } catch {}
     } elseif (Test-Path $AppDir) { Remove-Item -Path $AppDir -Recurse -Force }
     if ($LnkBackup) { Copy-Item $LnkBackup $Lnk -Force; Say 'Previous Startup shortcut restored.' } elseif (Test-Path $Lnk) { Remove-Item $Lnk -Force }
-    if ($State.StoppedOld -and (Test-Path $Lnk)) { Start-Process $Lnk; Say 'Previous server restarted from its shortcut.' }
+    if ($State.StoppedOld -and $hadOld) { Start-Studio $AppDir; Say 'Previous server restarted.' }
     if (Test-Path $keepLog) { Say ('New server log kept at ' + $keepLog) }
     Say 'Rollback complete. Nothing from this install remains active.' 'Yellow'
     Write-Result ('FAILED: ' + $failure + ' (rolled back to the previous version)')
